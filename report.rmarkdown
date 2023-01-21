@@ -1,0 +1,61 @@
+---
+title: "Facts About Growth:"
+subtitle: 'ECON807 Macroeconomic Theory & Policy, PS2 Q2'
+author: "Daniel Sánchez"
+date: '2023-01-24'
+format: pdf
+bibliography: https://api.citedrive.com/bib/110a99ed-398c-4d7f-a7e9-2436226bfd8f/references.bib?x=eyJpZCI6ICIxMTBhOTllZC0zOThjLTRkN2YtYTdlOS0yNDM2MjI2YmZkOGYiLCAidXNlciI6ICIxNzk4IiwgInNpZ25hdHVyZSI6ICJlZGI2OTE0OWFkNzFkMTFiMjJkMzBmM2U2NjBhYzNhMjU5ZDI2ZjgwNGFhYmM0NjRmYmU3MmUyZDAzZmE1ZDA1In0=/bibliography.bib
+knitr:
+  opts_chunk: 
+    echo: true
+---
+
+
+This document goes through my code and output done to answer question 2 (ECON)
+
+# Preliminaries
+
+Below, I load the libraries which I will need for doing the assignment.
+
+
+```{r}
+#| label: setup
+#| message: false
+
+# Load libraries
+
+library(tidyverse)
+library(WDI)
+```
+
+
+# Question 2 (a): Investment/GDP & Per-person GDP
+
+To answer this question, I will use data from the World Bank's World Development Indicators, which is a lot of data at the country level since 1960. I will extract the data from the World Bank's API by using the marvelous package [**WDI**](https://github.com/vincentarelbundock/WDI) from [Vincent Arel-Bundock](https://arelbundock.com/). I load the data below:
+
+
+```{r}
+#| label: load-data
+
+# Create my vector of indicators that I want to use
+
+indicators <- c(
+  'NE.GDI.FTOT.ZS', #  Gross fixed capital formation (% of GDP)
+  'NY.GDP.PCAP.PP.KD', # GDP per capita, PPP (constant 2017 international $)
+  'NY.GDP.MKTP.PP.KD', # GDP, PPP (constant 2017 international $)'
+  )
+
+# Now get my data
+
+wdi_raw <-
+  WDI(indicator = indicators,
+      end = 2021,
+      extra = T)
+
+```
+
+
+I will use gross fixed capital formation as a % of GDP to proxy Investment/GDP, as according to the database's documentation, this variable "includes land improvements (fences, ditches, drains, and so on); plant, machinery, and equipment purchases; and the construction of roads, railways, and the like, including schools, offices, hospitals, private residential dwellings, and commercial and industrial buildings" [-@wb_gcf].
+
+# References
+
