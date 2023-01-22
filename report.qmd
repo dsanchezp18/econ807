@@ -8,9 +8,11 @@ bibliography: https://api.citedrive.com/bib/110a99ed-398c-4d7f-a7e9-2436226bfd8f
 knitr:
   opts_chunk: 
     echo: true
+    message: false
+    warning: false
 ---
 
-This document goes through my code and output done to answer question 2 (ECON)
+This document goes through my code and output done to answer question 2 from problem set 2 (ECON807 Macroeconomic Theory & Policy). 
 
 # Preliminaries
 
@@ -23,10 +25,16 @@ Below, I load the libraries which I will need for doing the assignment.
 # Load libraries
 
 library(tidyverse)
+library(patchwork)
 library(WDI)
+library(modelsummary)
+library(sandwich)
+library(fixest)
 ```
 
-# Question 2 (a): Investment/GDP & Per-person GDP
+# Question 2 (a): Physical Capital Accumulation & Growth
+
+## Loading & Cleaning the Data
 
 To answer this question, I will use data from the World Bank's World Development Indicators, which is a lot of data at the country level since 1960. I will extract the data from the World Bank's API by using the marvelous package [**WDI**](https://github.com/vincentarelbundock/WDI) from [Vincent Arel-Bundock](https://arelbundock.com/). I load the data below:
 
@@ -37,8 +45,9 @@ To answer this question, I will use data from the World Bank's World Development
 
 indicators <- c(
   'inv_gdp'= 'NE.GDI.FTOT.ZS', #  Gross fixed capital formation (% of GDP)
-  'gdp_pc' = 'NY.GDP.PCAP.PP.KD', # GDP per capita, PPP (constant 2017 international $)
-  'gdp'= 'NY.GDP.MKTP.PP.KD' # GDP, PPP (constant 2017 international $)'
+  'gdp_pc' = 'NY.GDP.PCAP.KD',  # GDP per capita, PPP (constant 2017 international $)
+  'gdp_g'= 'NY.GDP.PCAP.KD.ZG', # GDP per capita growth (annual %)
+  'enrolment' = 'SE.PRM.ENRR' # Gross primary school enrolment
   )
 
 # Now get my data
@@ -49,6 +58,246 @@ wdi_raw <-
 
 ```
 
-I will use gross fixed capital formation as a % of GDP to proxy Investment/GDP, as according to the database's documentation, this variable "includes land improvements (fences, ditches, drains, and so on); plant, machinery, and equipment purchases; and the construction of roads, railways, and the like, including schools, offices, hospitals, private residential dwellings, and commercial and industrial buildings" [-@wb_gcf].
+I will use gross fixed capital formation as a % of GDP to proxy Investment/GDP, as according to the database's documentation, this variable "includes land improvements (fences, ditches, drains, and so on); plant, machinery, and equipment purchases; and the construction of roads, railways, and the like, including schools, offices, hospitals, private residential dwellings, and commercial and industrial buildings" [-@wb_gcf]. I believe this variable most accurately represents the rate at which a country invests in physical capital.
+
+I must clean the data to be able to use it. I drop all observations which are not actually countries. 
+
+```{r}
+#| label: data-cleaning
+
+# Create the dataframe object that I will use and filter out aggregates
+
+df <-
+  wdi_raw %>% 
+  filter(region != 'Aggregates')
+
+```
+
+I will use a sample of countries which have data for the first available year at the World Bank WDIs, which is 1960. To get the number of countries which have available data for all variables then, I will create a table with that information beginning 1961 (as GDP growth would only be available one period after the first one recorded at the WDIs). 
+
+```{r}
+countries_1961 <-
+  wdi_raw %>% 
+  filter(year == 1961,
+         !is.na(gdp_g),
+         !is.na(gdp_pc),
+         !is.na(inv_gdp))
+```
+
+There are `r nrow(countries_1961)`, which means there can be about `r nrow(countries_1961) * (2021-1961+1)` observations in total which are used for regressions. I will do an inner join of the 1960 GDP per capita for all countries which have it available. 
+
+```{r}
+df <-
+  df %>% 
+  inner_join(
+    wdi_raw %>% 
+      filter(year == 1960, !is.na(gdp_pc)) %>% 
+      select(iso3c, gdp_pc) %>% 
+      rename(gdp0 = 'gdp_pc'),
+    by = 'iso3c'
+  )
+
+```
+
+## Regression Analysis
+
+Run the regressions, which follow the model below:
+
+$$\ln{Y_{it}^{pc}} = \beta_0 + \beta_1 (\text{Investment}_{it}/Y_{it}) + \textbf{x}_{it}' \gamma + u_{it}$$
+
+where $\textbf{x}_{it}$ is a vector of controls which may or may not include year and country fixed effects, and $\gamma$ is the associated set of parameters. $u_{it}$ is the unobserved error and we take $Y_{it}$ to be the GDP (total or per capita,, $pc$) for country $i$ in year $t$.
+
+```{r}
+#| label: models
+
+# Simple model without controlling for initial GDP level
+
+reg1 <- 
+  lm(gdp_g ~ inv_gdp,
+     data = df)
+
+# Control for initial GDP level
+
+reg2 <- 
+  lm(gdp_g ~ inv_gdp + gdp0,
+     data = df)
+
+# Control for initial GDP level with log
+
+reg2l <- 
+  lm(gdp_g ~ inv_gdp + log(gdp0),
+     data = df)
+
+
+# Country fixed effects (without the value of )
+
+reg3<-
+  feols(gdp_g ~ inv_gdp | iso3c,
+        cluster = ~iso3c,
+        data = df)
+
+# Year fixed effects
+
+reg4<-
+  feols(gdp_g ~ inv_gdp + log(gdp0) | year,
+        cluster = ~year,
+        data = df)
+
+# Country & Year fixed effects
+
+reg5<-
+  feols(gdp_g ~ inv_gdp | year + iso3c,
+        cluster = ~ (year+iso3c),
+        data = df)
+
+```
+
+I display the models in the table below. Heteroskedasticity robust errors under the HC3 method are reported in some cases, whereas in FE models I report cluster-robust standard errors.
+
+```{r}
+#| label: regs-table
+#| results: asis
+
+# Create a list of models for the table
+
+models<-
+  list(
+    reg1,
+    reg2,
+    reg2l,
+    reg3,
+    reg4,
+    reg5
+  )
+
+# Do a named vector for my coefficient names
+
+names<-
+  c('inv_gdp' = 'Investment/GDP', 
+    'gdp0' = '1960 GDP per capita',
+    'log(gdp0)' = 'Ln 1960 GDP per capita',
+    '(Intercept)' = 'Intercept'
+  )
+
+# Do the table
+
+modelsummary(models,
+             vcov = list('robust','robust', 'robust', ~iso3c, ~year, ~iso3c + year),
+             stars = c('*' = .1, '**' = 0.05, '***' = .01),
+             coef_map = names,
+             gof_omit = c('AIC|BIC|Log|RMSE'),
+             output = 'markdown')
+```
+This shows that investment/GDP is related to greater GDP per capita. An increase in one percentage point of investment/GDP is associated with a 0.11-0.14 increase in the growth rate. The most conservative effect is when not controlling for country and year fixed effects. Note that when I consider country fixed effects, there is no need to control for 1960 (initial) GDP per capita, as it is actually perfectly collinear with the fixed effects. All of the effects are statistically significant at the 99% level.
+
+Below, I also plot the data for the level of GDP per capita (not growth) as well as the growth rate in scatterplotS to show the observed relationship. 
+
+```{r}
+#| label: graphs
+
+  ggplot(df, aes(inv_gdp, gdp_g)) +
+    geom_point()+
+    stat_smooth(method = 'lm', se = F)+
+    theme_bw()+
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank())+
+    labs(x = 'Investment/GDP',
+         y = 'GDP per Capita Growth (current 2015 USD)')
+
+```
+# Question 2(b): Including human capital
+
+I now allow for the buildup of human capital by including the primary schooling rate (gross). According to the World Bank, this rate "is the ratio of total enrollment, regardless of age, to the population of the age group that officially corresponds to the level of education shown" [-@wb_schooling]. 
+
+```{r}
+#| label: models-hc
+
+regh <- 
+  lm(gdp_g ~ enrolment,
+     data = df)
+
+# Control for initial GDP level with log
+
+reg1h <- 
+  lm(gdp_g ~ inv_gdp + log(gdp0) + enrolment,
+     data = df)
+
+# Country fixed effects
+
+reg2h<-
+  feols(gdp_g ~ inv_gdp  + enrolment | iso3c,
+        cluster = ~year,
+        data = df)
+
+
+# Year fixed effects
+
+reg3h<-
+  feols(gdp_g ~ inv_gdp + log(gdp0) + enrolment | year,
+        cluster = ~year,
+        data = df)
+
+# Country & Year fixed effects
+
+reg4h<-
+  feols(gdp_g ~ inv_gdp + enrolment | year + iso3c,
+        cluster = ~ (year+iso3c),
+        data = df)
+
+```
+The results are presented below:
+
+```{r}
+#| label: regs-table-hc
+#| results: asis
+
+# Create a list of models for the table
+
+models<-
+  list(
+    regh,
+    reg1h,
+    reg2h,
+    reg3h,
+    reg4h
+  )
+
+# Do a named vector for my coefficient names
+
+names<-
+  c('inv_gdp' = 'Investment/GDP', 
+    'enrolment' = 'Primary school enrolment rate (% gross)',
+    'log(gdp0)' = 'Ln 1960 GDP per capita',
+    '(Intercept)' = 'Intercept'
+  )
+
+# Do the table
+
+modelsummary(models,
+             vcov = list('robust', 'robust',~iso3c, ~year, ~iso3c + year),
+             stars = c('*' = .1, '**' = 0.05, '***' = .01),
+             coef_map = names,
+             gof_omit = c('AIC|BIC|Log|RMSE'),
+             output = 'markdown')
+```
+The results show that while a naive regression might relate higher schooling rates to higher growth rates, however, when controlling for the ratio of physical capital accumulation used in the previous question, as well as for country fixed effects, this effects seems to go away. I show this relationship graphically below, by using the World Bank's income groups.
+
+
+```{r}
+#| label: graph-hc
+
+ggplot(df, aes(enrolment, gdp_g)) +
+  geom_point(aes(colour = income))+
+  stat_smooth(method = 'lm', se = F)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())+
+  labs(x = 'Primary School Enrolment Rate (% gross)',
+       y = 'GDP per Capita Growth (current 2015 USD)',
+       colour = 'WB Income Groups' )
+
+```
+The grouping above allows to illustrate what the regressions above are also illustrating: countries with high income are already well-educated, so must of the variation across countries in schooling can be explained through differences in income. 
+
 
 # References
