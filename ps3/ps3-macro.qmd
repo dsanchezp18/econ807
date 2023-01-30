@@ -1,0 +1,253 @@
+---
+title: "Resources, growth, and poverty"
+subtitle: "ECON807 Macroeconomic Theory & Policy, PS3"
+author: "Daniel Sánchez Pazmiño"
+format: pdf
+knitr:
+  opts_chunk: 
+    echo: true
+    message: false
+    warning: false
+---
+
+In this document I walk through my code, equations and results for the ECON807 PS3. 
+
+## Preliminaries
+
+Loading libraries:
+
+```{r}
+#| label: setup
+
+# Load libraries
+
+library(tidyverse)
+library(WDI)
+
+```
+
+I consider the following production function:
+
+$$ Y_t = \left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho})\right]^{1/\rho} $$
+
+## (a) Plotting $Y_t$
+
+With parameters $\rho = -1$, $\beta = 0.02$, $E_t = 1$ and $R_0 = 1$:
+
+$$ Y_t = \left(0.02R_t^{-1} + 0.98X_t^{-1}\right)^{-1} $$
+where the two factors will grow geometrically as follows, with $R_0 = X_0 = 1$:
+
+\begin{align}
+R_t = 0.98^t R_0 = 0.98^t \\
+X_t = 1.03^t X_0 = 1.03^t 
+\end{align}
+
+Substituting back, I get the following function to plot across $t$:
+$$ Y_t = \left[0.02(0.98^t)^{-1} + 0.98(1.03^t)^{-1}\right]^{-1} $$
+```{r}
+#| label: simulate
+
+# Set up my parameters
+
+beta <- 0.02
+rho1 <- -1
+rho2 <- 0.001
+r_naught <- 1
+x_naught <- 1
+e_t <- 1
+g_r <- -0.02
+g_x <- 0.03
+
+# Create a dataframe with for t = 100 periods
+
+df <- data.frame(
+  t = seq(0,100)
+)
+
+# Now get values for the factors
+
+df_1 <-
+  df %>%
+  mutate(
+    r_t = r_naught*((1+g_r)^t),
+    x_t = x_naught*((1 + g_x)^t),
+    y_t = ((beta*(e_t*r_t)^(rho1)) + ((1-beta)*(x_t^(rho1))))^(1/rho1),
+    type = 'Perfect Complements',
+    rho = rho1
+  )
+
+# I do the same, but with a different value of rho and then append the two dataframes
+
+df_2 <-
+  df %>%
+  mutate(
+    r_t = r_naught*((1+g_r)^t),
+    x_t = x_naught*((1 + g_x)^t),
+    y_t = ((beta*(e_t*r_t)^(rho2)) + ((1-beta)*(x_t^(rho2))))^(1/rho2),
+    type = 'Cobb-Douglas',
+    rho = rho2
+  )
+
+df <-
+  df_1 %>% 
+  bind_rows(df_2)
+
+```
+
+I present the graph below:
+
+```{r}
+#| label: graph-1
+
+df %>% 
+ggplot(aes(t, y_t, colour = type, group = type))+
+  geom_line()+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = c(0.2,0.85))+
+  labs(x = 'Time (t)',
+       y = expression(paste('Output', ' ', (y[t]))),
+       colour = 'Production Function')
+
+```
+What is happening is that in the first production function, which with $\rho = -1$ converges to the minimum function that represents a perfect complements or fixed proportions technology. Thus, in this case, resources $R$ cannot be substituted with any of the other factors in $X$. This means that as time passes and resources $R$ become depleted, we won't be able to produce more after a certain amount of years. With a Cobb-Douglas production function (when $\rho = 1$), we are able to maintain production growing every year because this function assumes that natural resources $R$ can be somehow (but not perfectly) substituted. 
+
+## (b) Share of output paid to owners of $R$
+
+We derive the marginal product of $R$ below, in its analytical form so that we are able to later substitutes for the different values that exist for $\rho$. 
+
+\begin{align*}
+MP_R = \dfrac{\partial F}{\partial R}& = \dfrac{1}{\rho} \left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{1/\rho} \rho \beta E_t^{\rho} R_t^{{\rho-1}}\\
+&= \beta (E_t^{\rho}) (R_t^{\rho-1}) \dfrac{\left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{1/\rho}}{\left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{\rho}} \\
+&= \beta (E_t^{\rho}) (R_t^{\rho-1}) \left(\dfrac{Y_t}{Y_t^{\rho}}\right) \\
+&= \beta E_t^{\rho} R_t^{\rho-1} Y_t^{1-\rho}
+\end{align*}
+
+In the case of perfect competition, all factors are paid their marginal product. So the price of this factor, call it $w_R$, is equal what we've obtained before. The share of total income paid to owners of resources $R$, $s_R$, is then as follows:
+
+\begin{align*}
+s_R &= w_R \dfrac{R_t}{Y_t} = \beta E_t^{\rho} R_t^{\rho-1} Y_t^{1-\rho}  \left(\dfrac{R_t}{Y_t} \right)\\
+&= \beta E_t^{\rho} R_t^{\rho} Y_t^{-\rho}
+\end{align*}
+
+I code $s_R$ into my dataframe `df` and graph the share across time below:
+
+```{r}
+#| label: s_r-coding
+# Add a new column to the dataframe with s_r
+
+df <-
+  df %>% 
+  mutate(
+    s_r = beta *((e_t)^(rho))*((r_t)^(rho))*((y_t)^(-rho))
+  )
+
+# Graph it
+
+
+df %>% 
+ggplot(aes(t, s_r, colour = type, group = type))+
+  geom_line()+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = c(0.2,0.85))+
+  labs(x = 'Time (t)',
+       y = expression(paste('Share paid to resource owners', ' ', (s[R]))),
+       colour = 'Production Function')
+
+
+```
+In the case where $R$ is a perfect complement with the other resources, $X$, it happens that the share of income paid to $R$ owners increases exponentially; $s_R \to 1$ as $t \to \infty$. This is intuitive as most likely this resource becomes more valuable in scarcity. In the case where natural resources can indeed get substituted through some other factor, the share of income stagnates at just its initial weight of total output, $\beta$. This is also intuitive considering that as natural resources get more scarce, they still get more expensive ($w_R$ rises), but it is possible to use a better production blan which will minimize cost for the total economy by using other resources, which do not become scarce with time (they grow at rate $g_X$), and thus their price is lower.
+
+## (c) Constant $s_R$
+
+This is precisely the case of $\rho \to 0$, which means that the factors can be substituted between each other. Further, we need to have a constant efficiency parameter $E_t$, because otherwise $s_R$ would grow at least by an amount of the growth rate of $E_t$, due to the way the formula for $s_R$ looks. Finally, $\beta$ has no restriction on what it should be other than it will be equal to the constant $s_R$. 
+
+## (d) Real-World Data
+
+I load this World Bank Development Indicator with the *WDI* package, and later plot it to identify a trend.
+
+```{r}
+#| label: world-bank
+
+# Create my vector of indicators that I want to use
+
+indicators <- c(
+  's_R_empirical'= 'NE.GDI.FTOT.ZS',
+  'gdp_pc' = 'NY.GDP.PCAP.KD'
+  )
+
+# Now get my data
+
+wdi_raw <-
+  WDI(indicator = indicators,  
+      extra = T)
+
+# Get the world trend
+
+wdi_world <-
+  wdi_raw %>% 
+  filter(country == 'World',
+         year >= 1970) %>% 
+  select(country, year, s_R_empirical) %>% 
+  arrange(desc(year))
+
+# Graph
+
+wdi_world %>% 
+ggplot(aes(year, s_R_empirical))+
+  geom_point()+
+  geom_line(colour = '#466D1D')+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())+
+  labs(y = 'Total natural resources rents (% of GDP)',
+       x = 'Year')
+  
+
+```
+It does not appear that there has been a convergence towards a steady state for this share. We cannot be too confident about this observation, as there are could be either measurement error or many broken assumptions, such as the perfectly competitive markets assumption which is key to calculate this share. Under a different market scheme, different predictions about the behaviour of $s_R$ could be reached. 
+
+## (d) Looking into the `NE.GDI.FTOT.ZS` indicator
+
+This variable is the sum of oil rents, natural gas rents, coal rents (hard and soft), mineral rents, and forest rents, as a weighted average. The problem about this measure is that they are measured "the difference between the price of a commodity and the average cost of producing it." This is problematic as the average cost measure could be significantly downwardly biased due to the lack of good information about it. This is specially true for non-renewable industries where there are upfront costs which are not easy to allocate across the final product, such as exploration of oil fields.
+
+## (e) Modelling green growth
+
+If we were to have "green growth", it would imply that it is growth which almost only depends on any resources which are not natural, that is, the weight towards the aggregate factor $X$ approaches 1 and thus, $\beta \to 1$. Further, if we are to assume this kind of growth is even possible, we would need to have the possibility to substitute natural resources $R$ by any kind of other factor in $X$. Thus, we would need to have a $\rho$, which represents the elasticity of substitution, that approaches 1 (perfect substitutes). Thus, in this case $\rho \to 1$.
+
+## (f) Living income
+
+The answer to do this depend on we define a living income, which influences how it is measured and reported, as well as when we look at it, since cost of living in the country has been rising considerably in the last few years. If we look at GDP per capita in Canada as an estimate of what it would be to live comfortably in the country during one year, the trend against the world looks as follows:
+
+```{r}
+#| label: world-liveable-income
+
+# Get the world trend
+
+wdi_can_world <-
+  wdi_raw %>% 
+  filter(country %in% c('World', 'Canada'),
+         year > 1996) %>% # Only since 1996 we can begin comparing 
+  select(country, year, gdp_pc) %>% 
+  arrange(desc(year))
+
+# Graph
+
+wdi_can_world %>% 
+ggplot(aes(year, gdp_pc, colour = country, group = country)) +
+  geom_point()+
+  geom_line()+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())+
+  labs(y = 'GDP per Capita (2015 current USD)',
+       x = 'Year',
+       country = 'Country')
+  
+
+```
+In general, Canada is way above avg. world income. In 2021, the most recent year for Canada, average income was about 44 thousand 2015 dollars, while the world's was merely 11K. The growth that would be necessary is `r (43936.308/11010.163 -1)*100 %>% round(2)`%. The world would need to triplicate its average income to be able to catchup to Canada. 
+

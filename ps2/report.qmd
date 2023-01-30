@@ -45,7 +45,7 @@ To answer this question, I will use data from the World Bank's World Development
 
 indicators <- c(
   'inv_gdp'= 'NE.GDI.FTOT.ZS', #  Gross fixed capital formation (% of GDP)
-  'gdp_pc' = 'NY.GDP.PCAP.KD',  # GDP per capita, PPP (constant 2017 international $)
+  'gdp_pc' = 'NY.GDP.PCAP.KD',
   'gdp_g'= 'NY.GDP.PCAP.KD.ZG', # GDP per capita growth (annual %)
   'enrolment' = 'SE.PRM.ENRR' # Gross primary school enrolment
   )
