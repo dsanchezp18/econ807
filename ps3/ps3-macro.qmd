@@ -72,7 +72,7 @@ df_1 <-
     r_t = r_naught*((1+g_r)^t),
     x_t = x_naught*((1 + g_x)^t),
     y_t = ((beta*(e_t*r_t)^(rho1)) + ((1-beta)*(x_t^(rho1))))^(1/rho1),
-    type = 'Perfect Complements',
+    type = 'Perfect Complements (rho = -1)',
     rho = rho1
   )
 
@@ -84,7 +84,7 @@ df_2 <-
     r_t = r_naught*((1+g_r)^t),
     x_t = x_naught*((1 + g_x)^t),
     y_t = ((beta*(e_t*r_t)^(rho2)) + ((1-beta)*(x_t^(rho2))))^(1/rho2),
-    type = 'Cobb-Douglas',
+    type = 'Cobb-Douglas (rho = 0)',
     rho = rho2
   )
 
@@ -105,10 +105,12 @@ ggplot(aes(t, y_t, colour = type, group = type))+
   theme_bw()+
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        legend.position = c(0.2,0.85))+
+        legend.position = c(0.3,0.7))+
   labs(x = 'Time (t)',
        y = expression(paste('Output', ' ', (y[t]))),
-       colour = 'Production Function')
+       colour = 'Production Function',
+       title = 'Output over time',
+       subtitle = 'Two different production functions')
 
 ```
 What is happening is that in the first production function, which with $\rho = -1$ converges to the minimum function that represents a perfect complements or fixed proportions technology. Thus, in this case, resources $R$ cannot be substituted with any of the other factors in $X$. This means that as time passes and resources $R$ become depleted, we won't be able to produce more after a certain amount of years. With a Cobb-Douglas production function (when $\rho = 1$), we are able to maintain production growing every year because this function assumes that natural resources $R$ can be somehow (but not perfectly) substituted. 
@@ -118,8 +120,8 @@ What is happening is that in the first production function, which with $\rho = -
 We derive the marginal product of $R$ below, in its analytical form so that we are able to later substitutes for the different values that exist for $\rho$. 
 
 \begin{align*}
-MP_R = \dfrac{\partial F}{\partial R}& = \dfrac{1}{\rho} \left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{1/\rho} \rho \beta E_t^{\rho} R_t^{{\rho-1}}\\
-&= \beta (E_t^{\rho}) (R_t^{\rho-1}) \dfrac{\left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{1/\rho}}{\left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{\rho}} \\
+MP_R = \dfrac{\partial F}{\partial R}& = \dfrac{1}{\rho} \left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{\frac{1}{\rho} -1 } \rho \beta E_t^{\rho} R_t^{{\rho-1}}\\
+&= \beta (E_t^{\rho}) (R_t^{\rho-1}) \dfrac{\left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]^{1/\rho}}{\left[ \beta (E_t R_t)^{\rho} + (1-\beta) (X_t^{\rho}) \right]} \\
 &= \beta (E_t^{\rho}) (R_t^{\rho-1}) \left(\dfrac{Y_t}{Y_t^{\rho}}\right) \\
 &= \beta E_t^{\rho} R_t^{\rho-1} Y_t^{1-\rho}
 \end{align*}
@@ -152,18 +154,19 @@ ggplot(aes(t, s_r, colour = type, group = type))+
   theme_bw()+
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        legend.position = c(0.2,0.85))+
+        legend.position = c(0.3,0.7))+
   labs(x = 'Time (t)',
        y = expression(paste('Share paid to resource owners', ' ', (s[R]))),
-       colour = 'Production Function')
-
+       colour = 'Production Function',
+       title = 'Share of Income paid to resource owners over time',
+       subtitle = 'Two different production functions')
 
 ```
-In the case where $R$ is a perfect complement with the other resources, $X$, it happens that the share of income paid to $R$ owners increases exponentially; $s_R \to 1$ as $t \to \infty$. This is intuitive as most likely this resource becomes more valuable in scarcity. In the case where natural resources can indeed get substituted through some other factor, the share of income stagnates at just its initial weight of total output, $\beta$. This is also intuitive considering that as natural resources get more scarce, they still get more expensive ($w_R$ rises), but it is possible to use a better production blan which will minimize cost for the total economy by using other resources, which do not become scarce with time (they grow at rate $g_X$), and thus their price is lower.
+In the case where $R$ is a perfect complement with the other resources, $X$, it happens that the share of income paid to $R$ owners increases exponentially; $s_R \to 1$ as $t \to \infty$. This is intuitive as most likely this resource becomes more valuable in scarcity. In the case where natural resources can indeed get substituted through some other factor, the share of income stagnates at just its initial weight of total output, $\beta$. This is also intuitive considering that as natural resources get more scarce, they still get more expensive ($w_R$ rises), but it is possible to use a better production plan which will minimize cost for the total economy by using other resources, which do not become scarce with time (they grow at rate $g_X$), and thus their price is lower.
 
 ## (c) Constant $s_R$
 
-This is precisely the case of $\rho \to 0$, which means that the factors can be substituted between each other. Further, we need to have a constant efficiency parameter $E_t$, because otherwise $s_R$ would grow at least by an amount of the growth rate of $E_t$, due to the way the formula for $s_R$ looks. Finally, $\beta$ has no restriction on what it should be other than it will be equal to the constant $s_R$. 
+This is precisely the case of $\rho \to 0$, which means that the factors can be substituted between each other. Further, we need to have a constant efficiency parameter $E_t$, because otherwise $s_R$ would grow at least by an amount of the growth rate of $E_t$, due to the way the formula for $s_R$ looks. Finally, this means that as the economy substitutes away from natural resources $R$, it will be necessary for $\beta$ to converge towards 0. 
 
 ## (d) Real-World Data
 
@@ -204,7 +207,9 @@ ggplot(aes(year, s_R_empirical))+
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())+
   labs(y = 'Total natural resources rents (% of GDP)',
-       x = 'Year')
+       x = 'Year',
+       title = 'Totalnatural resources rents (World Development Indicators)',
+       subtitle = 'Estimate of the share of income paid to natural resource owners')
   
 
 ```
@@ -216,7 +221,7 @@ This variable is the sum of oil rents, natural gas rents, coal rents (hard and s
 
 ## (e) Modelling green growth
 
-If we were to have "green growth", it would imply that it is growth which almost only depends on any resources which are not natural, that is, the weight towards the aggregate factor $X$ approaches 1 and thus, $\beta \to 1$. Further, if we are to assume this kind of growth is even possible, we would need to have the possibility to substitute natural resources $R$ by any kind of other factor in $X$. Thus, we would need to have a $\rho$, which represents the elasticity of substitution, that approaches 1 (perfect substitutes). Thus, in this case $\rho \to 1$.
+If we were to have "green growth", it would imply that it is growth which almost only depends on any resources which are not natural, that is, the weight towards the aggregate factor $X$ approaches 1 and thus, $\beta \to 0 $. Further, if we are to assume this kind of growth is even possible, we would need to have the possibility to substitute natural resources $R$ by any kind of other factor in $X$. Thus, we would need to have a $\rho$, which represents the elasticity of substitution, that approaches 1 (perfect substitutes). Thus, in this case $\rho \to 1$.
 
 ## (f) Living income
 
@@ -245,9 +250,10 @@ ggplot(aes(year, gdp_pc, colour = country, group = country)) +
         panel.grid.minor = element_blank())+
   labs(y = 'GDP per Capita (2015 current USD)',
        x = 'Year',
-       country = 'Country')
+       colour = 'Country',
+       title = 'Income per Capita',
+       subtitle = 'Canada vs. the World')
   
-
 ```
 In general, Canada is way above avg. world income. In 2021, the most recent year for Canada, average income was about 44 thousand 2015 dollars, while the world's was merely 11K. The growth that would be necessary is `r (43936.308/11010.163 -1)*100 %>% round(2)`%. The world would need to triplicate its average income to be able to catchup to Canada. 
 
