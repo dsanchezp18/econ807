@@ -1,0 +1,196 @@
+---
+title: "ECON807 PS5: Business cycle properties in Canada"
+author: "Daniel Sánchez-Pazmiño"
+format: pdf
+knitr:
+  opts_chunk: 
+    echo: true
+    message: false
+    warning: false
+---
+
+
+In this document I walk through my code, equations and results for the ECON807 PS5.
+
+# Preliminaries
+
+```{r}
+#| label: setup
+
+# Load libraries
+
+library(tidyverse)
+library(lubridate)
+library(mFilter)
+library(dynlm)
+
+# Load the data
+
+raw_national_accounts <- 
+  read.csv('data.csv')
+ 
+```
+# Preparing the data
+
+In this part, I prepare the dataset to present a time series of the various national accounts. 
+
+```{r}
+#| label: data-prep
+
+# Transform to a date
+
+df <- 
+  raw_national_accounts %>% 
+  mutate(
+    date = ymd(paste(REF_DATE, '01')),
+    month_year = floor_date(date, 'month')
+  ) %>% 
+  select(-REF_DATE) %>% 
+  relocate(date, month_year) %>% 
+  rename(account = 'Estimates',
+         value = 'VALUE')
+
+# Create a joint dataframe to plot all of my timeseries. Will be needing to create a lot of new dataframes
+
+output <-
+  df %>% 
+  filter(account == 'Gross domestic product at market prices') %>% 
+  select(month_year, account, value) %>% 
+  mutate(account = 'Output')
+
+consumption <-
+  df %>% 
+  filter(account %in% c('Household final consumption expenditure', 'Durable goods')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value = value[account == 'Household final consumption expenditure'] -
+              value[account == 'Durable goods']) %>% 
+  mutate(account = 'Consumption')
+
+investment <-
+  df %>% 
+  filter(account %in% c('Gross fixed capital formation', 
+                        'Durable goods', 
+                        'General governments gross fixed capital formation')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value = 
+              value[account == 'Gross fixed capital formation'] +
+              value[account == 'Durable goods'] -
+              value[account == 'General governments gross fixed capital formation'] )%>% 
+  mutate(account = 'Investment')
+
+government <-
+  df %>% 
+  filter(account %in% c ('General governments final consumption expenditure', 
+                        'General governments gross fixed capital formation')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value =
+              value[account == 'General governments final consumption expenditure'] +
+              value[account == 'General governments gross fixed capital formation'] )%>% 
+  mutate(account = 'Government Purchases')
+
+time_series_graph <-
+  output %>% 
+  bind_rows(consumption) %>% 
+  bind_rows(investment) %>% 
+  bind_rows(government)
+
+```
+
+# (a) Presenting the national account time series
+
+I present graphs with the time series below.
+
+```{r}
+#| label: time-series-graph
+#| fig.height: 5
+#| fig.width: 6
+
+time_series_graph %>% 
+  ggplot(aes(month_year, value/1000, colour = account)) + 
+  geom_line(linewidth = 1) +
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = c('0.2', '0.8'))+
+  labs(x = 'Time (t)',
+       y = 'Value in billions of chained (2012) dollars ',
+       colour = 'National Account',
+       title = 'Time Series Graph of Select Canadian National Accounts',
+       subtitle = 'Quarterly 1961-2022')
+
+```
+# (b) Some transformations
+
+Below, I do the required transformations on the data.
+
+```{r}
+#| label: transformations
+
+# (i) Log
+
+time_series_transformed <-
+  time_series_graph %>% 
+  mutate(log = log(value))
+
+# (ii) Baxter King filter
+
+bk_log <- bkfilter(time_series_transformed$log, pl = 6, pu = 32, nfix = 12)
+
+# Add to the dataframe
+
+time_series_transformed <-
+  time_series_transformed %>% 
+  mutate(bk_log_trend = bk_log$trend,
+         bk_log_cycle = bk_log$cycle)
+
+# (iii) Hamilton (2016)
+
+# Need to run a regression with lags of the dependent variable. 
+# Must use a ts object for all of the different national accounts
+
+output_ts <- ts(
+  output,
+  start = c(1961,1),
+  frequency = 4
+)
+
+consumption_ts <- ts(
+  consumption,
+  start = c(1961,1),
+  frequency = 4
+)
+
+investment_ts <-ts(
+  investment,
+  start = c(1961,1),
+  frequency = 4
+)
+
+government_ts <- ts(
+  government,
+  start = c(1961,1),
+  frequency = 4
+)
+
+# Run the regressions for all of the national accounts as specified
+# using the dynlm package
+# Include the residuals in each of the dataframes to be graphed
+
+output_reg <- dynlm(
+  value ~ L(value, 8) + L(value, 9) + L(value, 10) + L(value, 11),
+  data = output_ts
+)
+
+residuals <- output_reg$residuals
+
+output_ts <-
+  output_ts %>% 
+  cbind('residuals' = residuals)
+
+```
+
+
+
