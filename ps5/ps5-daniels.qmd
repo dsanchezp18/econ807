@@ -23,6 +23,7 @@ library(tidyverse)
 library(lubridate)
 library(mFilter)
 library(dynlm)
+library(gridExtra)
 
 # Load the data
 
@@ -90,13 +91,6 @@ government <-
               value[account == 'General governments final consumption expenditure'] +
               value[account == 'General governments gross fixed capital formation'] )%>% 
   mutate(account = 'Government Purchases')
-
-time_series_graph <-
-  output %>% 
-  bind_rows(consumption) %>% 
-  bind_rows(investment) %>% 
-  bind_rows(government)
-
 ```
 
 # (a) Presenting the national account time series
@@ -106,9 +100,12 @@ I present graphs with the time series below.
 ```{r}
 #| label: time-series-graph
 #| fig.height: 5
-#| fig.width: 6
+#| fig.width: 8
 
-time_series_graph %>% 
+output %>% 
+  bind_rows(consumption) %>% 
+  bind_rows(investment) %>% 
+  bind_rows(government) %>% 
   ggplot(aes(month_year, value/1000, colour = account)) + 
   geom_line(linewidth = 1) +
   theme_bw()+
@@ -124,71 +121,246 @@ time_series_graph %>%
 ```
 # (b) Some transformations
 
-Below, I do the required transformations on the data.
+I do the required transformations on the data, but I hide them as they would take too much space. Please see my `.qmd` file (a Quarto source document, which should run in any updated version of R & RStudio). I apply the BK and HP filters, as well as Hamilton's suggested transformation which involves regressing the dependent variables (consumption, investment, government expenditure and output) on their period lags. I use *dplyr*'s function `lag()` for this purpose, and then plot the residuals. All three seem quite similar, and their graphs are shown below.
+
+# (c) Presenting graphs
+
+Below, I present four graph panels, with two graphs each. The righmost panel includes the graph of every series decomposed with the BK and HP methods as well as Hamilton's regression approach. The rightmost panel includes the log transformation of the series. I could not include it in the same graph as the magnitued of the decomposed cycles are too small relative to the log, so it is easier to see it in separate graphs.
+
+## Output (GDP)
 
 ```{r}
-#| label: transformations
+#| label: transformations-output
+#| fig.height: 6
+#| fig.width: 12
+#| echo: false
+#| eval: false  
 
-# (i) Log
+# I need to operate separately on each dataframe, applying each transformation as we go,
+# then joining everything later.
 
-time_series_transformed <-
-  time_series_graph %>% 
-  mutate(log = log(value))
+# 1. Consumption
 
-# (ii) Baxter King filter
+# Apply the first transformation (i) log but also include all necessary lags
 
-bk_log <- bkfilter(time_series_transformed$log, pl = 6, pu = 32, nfix = 12)
+output <-
+  output %>% 
+  mutate(log = log(value),
+         lag_8 = lag(log, 8),
+         lag_9 = lag(log, 9),
+         lag_10 = lag(log, 10),
+         lag_11 = lag(log, 11))
 
-# Add to the dataframe
+# (ii) Baxter-King
 
-time_series_transformed <-
-  time_series_transformed %>% 
-  mutate(bk_log_trend = bk_log$trend,
-         bk_log_cycle = bk_log$cycle)
+consumption_bk <-
+  bkfilter(consumption$log, pl = 6, pu = 32, nfix = 12)
 
-# (iii) Hamilton (2016)
+# Add it to the dataframe
 
-# Need to run a regression with lags of the dependent variable. 
-# Must use a ts object for all of the different national accounts
+consumption <-
+  consumption %>% 
+  mutate(bk_cycle = as.vector(consumption_bk$cycle))
 
-output_ts <- ts(
-  output,
-  start = c(1961,1),
-  frequency = 4
+# (iii) Hamilton (2016) regression:
+
+consumption_reg <- lm(
+  log ~ lag_8 + lag_9 + lag_10 + lag_11,
+  data = consumption
 )
 
-consumption_ts <- ts(
-  consumption,
-  start = c(1961,1),
-  frequency = 4
+# Prepare the residuals for inputting
+
+residuals <- 
+  data.frame(residuals = rep(NA,nrow(consumption) - length(consumption_reg$residuals))) %>% 
+  bind_rows(data.frame(residuals = residuals(consumption_reg)))
+
+rownames(residuals) <- NULL
+
+# Input the residuals
+
+consumption <-
+  consumption %>% 
+  mutate(residuals = residuals$residuals)
+
+# (iv) Hodrick-Prescott
+
+hp_consumption <-
+  hpfilter(consumption$log, freq = 1600)
+
+# Input the hp cycle to the dataframe
+
+consumption <-
+  consumption %>% 
+  mutate(hp_cycle = hp_consumption$cycle)
+
+# Transform consumption to long format
+
+consumption <-
+  consumption %>% 
+  select(month_year, account, log, bk_cycle, hp_cycle, residuals) %>%
+  gather(type,
+         value,
+         log,
+         bk_cycle,
+         hp_cycle,
+         residuals)
+         
+# Now, do my graphs (cannot graph the log in the same graph, messes up the axes)
+
+consumption_graph <-
+  consumption %>%
+    filter(type != 'log') %>% 
+    ggplot(aes(month_year, value, colour = type)) + 
+    geom_line(linewidth = 1) +
+    scale_colour_manual(values = c('bk_cycle' = '#FFA07A', 
+                                   'residuals' = '#6495ED', 
+                                   'hp_cycle' = '#8FBC8F'),
+                        name = 'Decomposition Filter',
+                        labels = c('Baxter-King', 'Hamilton (2016)', 'Hodrick-Prescott')) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.position = c('0.2', '0.15')) +
+    labs(x = 'Time (t)',
+         y = 'Log of consumption in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Cycles of time series decomposition of consumption',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+consumption_graph_log <-
+    consumption %>%
+    filter(type == 'log') %>% 
+    ggplot(aes(month_year, value)) + 
+    geom_line(linewidth = 1) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()) +
+    labs(x = 'Time (t)',
+         y = 'Log of consumption in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Log Consumption',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+grid.arrange(consumption_graph, consumption_graph_log, ncol = 2)
+
+```
+
+## Consumption
+
+```{r}
+#| label: transformations-consumption
+#| fig.height: 6
+#| fig.width: 12
+#| echo: false
+
+# I need to operate separately on each dataframe, applying each transformation as we go,
+# then joining everything later.
+
+# 1. Consumption
+
+# Apply the first transformation (i) log but also include all necessary lags
+
+consumption <-
+  consumption %>% 
+  mutate(log = log(value),
+         lag_8 = lag(log, 8),
+         lag_9 = lag(log, 9),
+         lag_10 = lag(log, 10),
+         lag_11 = lag(log, 11))
+
+# (ii) Baxter-King
+
+consumption_bk <-
+  bkfilter(consumption$log, pl = 6, pu = 32, nfix = 12)
+
+# Add it to the dataframe
+
+consumption <-
+  consumption %>% 
+  mutate(bk_cycle = as.vector(consumption_bk$cycle))
+
+# (iii) Hamilton (2016) regression:
+
+consumption_reg <- lm(
+  log ~ lag_8 + lag_9 + lag_10 + lag_11,
+  data = consumption
 )
 
-investment_ts <-ts(
-  investment,
-  start = c(1961,1),
-  frequency = 4
-)
+# Prepare the residuals for inputting
 
-government_ts <- ts(
-  government,
-  start = c(1961,1),
-  frequency = 4
-)
+residuals <- 
+  data.frame(residuals = rep(NA,nrow(consumption) - length(consumption_reg$residuals))) %>% 
+  bind_rows(data.frame(residuals = residuals(consumption_reg)))
 
-# Run the regressions for all of the national accounts as specified
-# using the dynlm package
-# Include the residuals in each of the dataframes to be graphed
+rownames(residuals) <- NULL
 
-output_reg <- dynlm(
-  value ~ L(value, 8) + L(value, 9) + L(value, 10) + L(value, 11),
-  data = output_ts
-)
+# Input the residuals
 
-residuals <- output_reg$residuals
+consumption <-
+  consumption %>% 
+  mutate(residuals = residuals$residuals)
 
-output_ts <-
-  output_ts %>% 
-  cbind('residuals' = residuals)
+# (iv) Hodrick-Prescott
+
+hp_consumption <-
+  hpfilter(consumption$log, freq = 1600)
+
+# Input the hp cycle to the dataframe
+
+consumption <-
+  consumption %>% 
+  mutate(hp_cycle = hp_consumption$cycle)
+
+# Transform consumption to long format
+
+consumption <-
+  consumption %>% 
+  select(month_year, account, log, bk_cycle, hp_cycle, residuals) %>%
+  gather(type,
+         value,
+         log,
+         bk_cycle,
+         hp_cycle,
+         residuals)
+         
+# Now, do my graphs (cannot graph the log in the same graph, messes up the axes)
+
+consumption_graph <-
+  consumption %>%
+    filter(type != 'log') %>% 
+    ggplot(aes(month_year, value, colour = type)) + 
+    geom_line(linewidth = 1) +
+    scale_colour_manual(values = c('bk_cycle' = '#FFA07A', 
+                                   'residuals' = '#6495ED', 
+                                   'hp_cycle' = '#8FBC8F'),
+                        name = 'Decomposition Filter',
+                        labels = c('Baxter-King', 'Hamilton (2016)', 'Hodrick-Prescott')) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.position = c('0.2', '0.15')) +
+    labs(x = 'Time (t)',
+         y = 'Log of consumption in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Cycles of time series decomposition of consumption',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+consumption_graph_log <-
+    consumption %>%
+    filter(type == 'log') %>% 
+    ggplot(aes(month_year, value)) + 
+    geom_line(linewidth = 1) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()) +
+    labs(x = 'Time (t)',
+         y = 'Log of consumption in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Log Consumption',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+grid.arrange(consumption_graph, consumption_graph_log, ncol = 2)
 
 ```
 
