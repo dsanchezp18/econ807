@@ -4,11 +4,10 @@ author: "Daniel Sánchez-Pazmiño"
 format: pdf
 knitr:
   opts_chunk: 
-    echo: true
+    echo: false
     message: false
     warning: false
 ---
-
 
 In this document I walk through my code, equations and results for the ECON807 PS5.
 
@@ -24,6 +23,8 @@ library(lubridate)
 library(mFilter)
 library(dynlm)
 library(gridExtra)
+library(tidyr)
+library(kableExtra)
 
 # Load the data
 
@@ -31,9 +32,6 @@ raw_national_accounts <-
   read.csv('data.csv')
  
 ```
-# Preparing the data
-
-In this part, I prepare the dataset to present a time series of the various national accounts. 
 
 ```{r}
 #| label: data-prep
@@ -99,7 +97,7 @@ I present graphs with the time series below.
 
 ```{r}
 #| label: time-series-graph
-#| fig.height: 5
+#| fig.height: 4
 #| fig.width: 8
 
 output %>% 
@@ -111,7 +109,7 @@ output %>%
   theme_bw()+
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        legend.position = c('0.2', '0.8'))+
+        legend.position = c('0.15', '0.7'))+
   labs(x = 'Time (t)',
        y = 'Value in billions of chained (2012) dollars ',
        colour = 'National Account',
@@ -134,7 +132,6 @@ Below, I present four graph panels, with two graphs each. The righmost panel inc
 #| fig.height: 6
 #| fig.width: 12
 #| echo: false
-#| eval: false  
 
 # I need to operate separately on each dataframe, applying each transformation as we go,
 # then joining everything later.
@@ -153,51 +150,51 @@ output <-
 
 # (ii) Baxter-King
 
-consumption_bk <-
-  bkfilter(consumption$log, pl = 6, pu = 32, nfix = 12)
+output_bk <-
+  bkfilter(output$log, pl = 6, pu = 32, nfix = 12)
 
 # Add it to the dataframe
 
-consumption <-
-  consumption %>% 
-  mutate(bk_cycle = as.vector(consumption_bk$cycle))
+output <-
+  output %>% 
+  mutate(bk_cycle = as.vector(output_bk$cycle))
 
 # (iii) Hamilton (2016) regression:
 
-consumption_reg <- lm(
+output_reg <- lm(
   log ~ lag_8 + lag_9 + lag_10 + lag_11,
-  data = consumption
+  data = output
 )
 
 # Prepare the residuals for inputting
 
 residuals <- 
-  data.frame(residuals = rep(NA,nrow(consumption) - length(consumption_reg$residuals))) %>% 
-  bind_rows(data.frame(residuals = residuals(consumption_reg)))
+  data.frame(residuals = rep(NA,nrow(output) - length(output_reg$residuals))) %>% 
+  bind_rows(data.frame(residuals = residuals(output_reg)))
 
 rownames(residuals) <- NULL
 
 # Input the residuals
 
-consumption <-
-  consumption %>% 
+output <-
+  output %>% 
   mutate(residuals = residuals$residuals)
 
 # (iv) Hodrick-Prescott
 
-hp_consumption <-
-  hpfilter(consumption$log, freq = 1600)
+hp_output <-
+  hpfilter(output$log, freq = 1600)
 
 # Input the hp cycle to the dataframe
 
-consumption <-
-  consumption %>% 
-  mutate(hp_cycle = hp_consumption$cycle)
+output <-
+  output %>% 
+  mutate(hp_cycle = hp_output$cycle)
 
 # Transform consumption to long format
 
-consumption <-
-  consumption %>% 
+output <-
+  output %>% 
   select(month_year, account, log, bk_cycle, hp_cycle, residuals) %>%
   gather(type,
          value,
@@ -208,8 +205,8 @@ consumption <-
          
 # Now, do my graphs (cannot graph the log in the same graph, messes up the axes)
 
-consumption_graph <-
-  consumption %>%
+output_graph <-
+  output %>%
     filter(type != 'log') %>% 
     ggplot(aes(month_year, value, colour = type)) + 
     geom_line(linewidth = 1) +
@@ -223,13 +220,13 @@ consumption_graph <-
           panel.grid.minor = element_blank(),
           legend.position = c('0.2', '0.15')) +
     labs(x = 'Time (t)',
-         y = 'Log of consumption in millions of chained (2012) dollars ',
+         y = 'Log of output in millions of chained (2012) dollars ',
          colour = 'Decomposition',
-         title = 'Cycles of time series decomposition of consumption',
+         title = 'Cycles of time series decomposition of output',
          subtitle = 'Canada, quarterly 1961-2022')
 
-consumption_graph_log <-
-    consumption %>%
+output_graph_log <-
+    output %>%
     filter(type == 'log') %>% 
     ggplot(aes(month_year, value)) + 
     geom_line(linewidth = 1) +
@@ -237,12 +234,12 @@ consumption_graph_log <-
     theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank()) +
     labs(x = 'Time (t)',
-         y = 'Log of consumption in millions of chained (2012) dollars ',
+         y = 'Log of output in millions of chained (2012) dollars ',
          colour = 'Decomposition',
-         title = 'Log Consumption',
+         title = 'Log Output',
          subtitle = 'Canada, quarterly 1961-2022')
 
-grid.arrange(consumption_graph, consumption_graph_log, ncol = 2)
+grid.arrange(output_graph, output_graph_log, ncol = 2)
 
 ```
 
@@ -363,6 +360,566 @@ consumption_graph_log <-
 grid.arrange(consumption_graph, consumption_graph_log, ncol = 2)
 
 ```
+## Investment
+
+```{r}
+#| label: transformations-investment
+#| fig.height: 6
+#| fig.width: 12
+#| echo: false
+
+# I need to operate separately on each dataframe, applying each transformation as we go,
+# then joining everything later.
+
+# 1. Consumption
+
+# Apply the first transformation (i) log but also include all necessary lags
+
+investment <-
+  investment %>% 
+  mutate(log = log(value),
+         lag_8 = lag(log, 8),
+         lag_9 = lag(log, 9),
+         lag_10 = lag(log, 10),
+         lag_11 = lag(log, 11))
+
+# (ii) Baxter-King
+
+investment_bk <-
+  bkfilter(investment$log, pl = 6, pu = 32, nfix = 12)
+
+# Add it to the dataframe
+
+investment <-
+  investment %>% 
+  mutate(bk_cycle = as.vector(investment_bk$cycle))
+
+# (iii) Hamilton (2016) regression:
+
+investment_reg <- lm(
+  log ~ lag_8 + lag_9 + lag_10 + lag_11,
+  data = investment
+)
+
+# Prepare the residuals for inputting
+
+residuals <- 
+  data.frame(residuals = rep(NA,nrow(investment) - length(investment_reg$residuals))) %>% 
+  bind_rows(data.frame(residuals = residuals(investment_reg)))
+
+rownames(residuals) <- NULL
+
+# Input the residuals
+
+investment <-
+  investment %>% 
+  mutate(residuals = residuals$residuals)
+
+# (iv) Hodrick-Prescott
+
+hp_investment <-
+  hpfilter(investment$log, freq = 1600)
+
+# Input the hp cycle to the dataframe
+
+investment <-
+  investment %>% 
+  mutate(hp_cycle = hp_investment$cycle)
+
+# Transform investment to long format
+
+investment <-
+  investment %>% 
+  select(month_year, account, log, bk_cycle, hp_cycle, residuals) %>%
+  gather(type,
+         value,
+         log,
+         bk_cycle,
+         hp_cycle,
+         residuals)
+         
+# Now, do my graphs (cannot graph the log in the same graph, messes up the axes)
+
+investment_graph <-
+  investment %>%
+    filter(type != 'log') %>% 
+    ggplot(aes(month_year, value, colour = type)) + 
+    geom_line(linewidth = 1) +
+    scale_colour_manual(values = c('bk_cycle' = '#FFA07A', 
+                                   'residuals' = '#6495ED', 
+                                   'hp_cycle' = '#8FBC8F'),
+                        name = 'Decomposition Filter',
+                        labels = c('Baxter-King', 'Hamilton (2016)', 'Hodrick-Prescott')) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.position = c('0.2', '0.15')) +
+    labs(x = 'Time (t)',
+         y = 'Log of investment in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Cycles of time series decomposition of investment',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+investment_graph_log <-
+    investment %>%
+    filter(type == 'log') %>% 
+    ggplot(aes(month_year, value)) + 
+    geom_line(linewidth = 1) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()) +
+    labs(x = 'Time (t)',
+         y = 'Log of investment in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Log Investment',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+grid.arrange(investment_graph, investment_graph_log, ncol = 2)
+
+```
+## Government Expenditure
+```{r}
+#| label: transformations-government
+#| fig.height: 6
+#| fig.width: 12
+#| echo: false
+
+# 4. Government
+
+# Apply the first transformation (i) log but also include all necessary lags
+
+government <-
+  government %>% 
+  mutate(log = log(value),
+         lag_8 = lag(log, 8),
+         lag_9 = lag(log, 9),
+         lag_10 = lag(log, 10),
+         lag_11 = lag(log, 11))
+
+# (ii) Baxter-King
+
+government_bk <-
+  bkfilter(government$log, pl = 6, pu = 32, nfix = 12)
+
+# Add it to the dataframe
+
+government <-
+  government %>% 
+  mutate(bk_cycle = as.vector(government_bk$cycle))
+
+# (iii) Hamilton (2016) regression:
+
+government_reg <- lm(
+  log ~ lag_8 + lag_9 + lag_10 + lag_11,
+  data = government
+)
+
+# Prepare the residuals for inputting
+
+residuals <- 
+  data.frame(residuals = rep(NA,nrow(government) - length(government_reg$residuals))) %>% 
+  bind_rows(data.frame(residuals = residuals(government_reg)))
+
+rownames(residuals) <- NULL
+
+# Input the residuals
+
+government <-
+  government %>% 
+  mutate(residuals = residuals$residuals)
+
+# (iv) Hodrick-Prescott
+
+hp_government <-
+  hpfilter(government$log, freq = 1600)
+
+# Input the hp cycle to the dataframe
+
+government <-
+  government %>% 
+  mutate(hp_cycle = hp_government$cycle)
+
+# Transform investment to long format
+
+government <-
+  government %>% 
+  select(month_year, account, log, bk_cycle, hp_cycle, residuals) %>%
+  gather(type,
+         value,
+         log,
+         bk_cycle,
+         hp_cycle,
+         residuals)
+         
+# Now, do my graphs (cannot graph the log in the same graph, messes up the axes)
+
+government_graph <-
+  government %>%
+    filter(type != 'log') %>% 
+    ggplot(aes(month_year, value, colour = type)) + 
+    geom_line(linewidth = 1) +
+    scale_colour_manual(values = c('bk_cycle' = '#FFA07A', 
+                                   'residuals' = '#6495ED', 
+                                   'hp_cycle' = '#8FBC8F'),
+                        name = 'Decomposition Filter',
+                        labels = c('Baxter-King', 'Hamilton (2016)', 'Hodrick-Prescott')) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.position = c('0.2', '0.15')) +
+    labs(x = 'Time (t)',
+         y = 'Log of gov. expenditure in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Cycles of time series decomposition of gov. expenditure',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+government_graph_log <-
+    government %>%
+    filter(type == 'log') %>% 
+    ggplot(aes(month_year, value)) + 
+    geom_line(linewidth = 1) +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()) +
+    labs(x = 'Time (t)',
+         y = 'Log of gov. expenditure in millions of chained (2012) dollars ',
+         colour = 'Decomposition',
+         title = 'Log  Gov. Expenditure',
+         subtitle = 'Canada, quarterly 1961-2022')
+
+grid.arrange(government_graph, government_graph_log, ncol = 2)
+
+```
+## Correlations Table
+
+I perform all calculations necessary to produce the required standard deviation and correlations tables. I compare consumption, investment and government expenditure to output. 
+
+```{r}
+#| label: correlations-table
+#| results: asis
+#| echo: false
+
+# Produce a wide format table for consumption against output, and left_join with the wide output one.
+
+consumption_wide <-
+  consumption %>% 
+  pivot_wider(id_cols = month_year,
+              names_from = type,
+              values_from = value) %>% 
+  left_join(
+    output %>% 
+      pivot_wider(id_cols = month_year,
+                  names_from = type,
+                  values_from = value),
+    by = 'month_year'
+  )
+
+# Do a vector of correlations between variables
+
+consumption_cors <-
+  c(
+  'Log' = cor(consumption_wide$log.x, consumption_wide$log.y),
+  'BK Filter' = cor(consumption_wide$bk_cycle.x, consumption_wide$bk_cycle.y, use = 'complete.obs'),
+  'HP Filter' = cor(consumption_wide$hp_cycle.x, consumption_wide$bk_cycle.y, use = 'complete.obs'),
+  'Hamilton (2016)' = cor(consumption_wide$residuals.x, consumption_wide$residuals.y, use = 'complete.obs')
+)
+
+# Produce a wide format table for investment against output, and left_join with the wide output one.
+
+investment_wide <-
+  investment %>% 
+  pivot_wider(id_cols = month_year,
+              names_from = type,
+              values_from = value) %>% 
+  left_join(
+    output %>% 
+      pivot_wider(id_cols = month_year,
+                  names_from = type,
+                  values_from = value),
+    by = 'month_year'
+  )
+
+# Do a vector of correlations between variables
+
+investment_cors <-
+  c(
+  'Log' = cor(investment_wide$log.x, investment_wide$log.y),
+  'BK Filter' = cor(investment_wide$bk_cycle.x, investment_wide$bk_cycle.y, use = 'complete.obs'),
+  'HP Filter' = cor(investment_wide$hp_cycle.x, investment_wide$bk_cycle.y, use = 'complete.obs'),
+  'Hamilton (2016)' = cor(investment_wide$residuals.x, investment_wide$residuals.y, use = 'complete.obs')
+)
+
+# Produce a wide format table for government expenditure against output, and left_join with the wide output one.
+
+government_wide <-
+  government %>% 
+  pivot_wider(id_cols = month_year,
+              names_from = type,
+              values_from = value) %>% 
+  left_join(
+    output %>% 
+      pivot_wider(id_cols = month_year,
+                  names_from = type,
+                  values_from = value),
+    by = 'month_year'
+  )
+
+# Do a vector of correlations between variables
+
+government_cors <-
+  c(
+  'Log' = cor(government_wide$log.x, government_wide$log.y),
+  'BK Filter' = cor(government_wide$bk_cycle.x, government_wide$bk_cycle.y, use = 'complete.obs'),
+  'HP Filter' = cor(government_wide$hp_cycle.x, government_wide$bk_cycle.y, use = 'complete.obs'),
+  'Hamilton (2016)' = cor(government_wide$residuals.x, government_wide$residuals.y, use = 'complete.obs')
+)
+
+# Produce my final table of correlations
+
+cor_table <-
+  consumption_cors %>% 
+  rbind(investment_cors) %>% 
+  rbind(government_cors)
+
+rownames(cor_table) <- c(
+  'Consumption',
+  'Investment',
+  'Government Expenditure'
+)
+
+# I also do the standard deviations table, as follows
+
+sd_output <- c(
+  'Log' = sd(consumption_wide$log.y, na.rm = T),
+  'BK Filter' = sd(consumption_wide$bk_cycle.y, na.rm = T),
+  'HP Filter' = sd(consumption_wide$hp_cycle.y, na.rm = T),
+  'Hamilton (2016)' = sd(consumption_wide$residuals.y, na.rm = T)
+)
 
 
+sd_consumption <- c(
+  'Log' = sd(consumption_wide$log.x, na.rm = T),
+  'BK Filter' = sd(consumption_wide$bk_cycle.x, na.rm = T),
+  'HP Filter' = sd(consumption_wide$hp_cycle.x, na.rm = T),
+  'Hamilton (2016)' = sd(consumption_wide$residuals.x, na.rm = T)
+)
+
+
+sd_investment <- c(
+  'Log' = sd(investment_wide$log.x, na.rm = T),
+  'BK Filter' = sd(investment_wide$bk_cycle.x, na.rm = T),
+  'HP Filter' = sd(investment_wide$hp_cycle.x, na.rm = T),
+  'Hamilton (2016)' = sd(investment_wide$residuals.x, na.rm = T)
+)
+
+sd_government <- c(
+  'Log' = sd(government_wide$log.x, na.rm = T),
+  'BK Filter' = sd(government_wide$bk_cycle.x, na.rm = T),
+  'HP Filter' = sd(government_wide$hp_cycle.x, na.rm = T),
+  'Hamilton (2016)' = sd(government_wide$residuals.x, na.rm = T)
+)
+
+sd_table <-
+  sd_output %>% 
+    rbind(sd_consumption) %>% 
+    rbind(sd_investment) %>% 
+    rbind(sd_government)
+
+rownames(sd_table) <- c(
+  'Output',
+  'Consumption',
+  'Investment',
+  'Government Expenditure'
+)
+
+# Sd table
+
+kable(sd_table,
+      booktabs = T,
+      align = 'c',
+      caption = 'Standard Deviations Table') %>% 
+  kable_styling(latex_options = 'HOLD_position')
+
+# Correlation Table
+
+kable(cor_table,
+      booktabs = T,
+      align = 'c',
+      caption = 'Correlation Table (against output)') %>% 
+  kable_styling(latex_options = 'HOLD_position')
+
+```
+
+# (e) Some comments
+
+According to theory, in general, investment and output tend to be the most volatile components of GDP in terms of the business cycle. Consumption is typically less volatile, while government expenditure can vary depending on the specific context and timing of policy changes. The empirical results that I have presented above show that without decomposing the data, all four series move together closely. We see drops in recessions, but the biggest was the COVID-19 shock in 2020. 
+
+It appears that the most volatile component is investment, after having detrended the data. Looking at its graph, it is very volatile (much more than any of the other series). The standard deviations table confirms this. The least volatile series is consumption, which goes according to theoretical predictions. Due to consumption smoothing, people prefer to consume more or less the same on every period, which leads consumption to see the least changes across time. Almost all series across all decomposition types are procyclical, with the exception of government expenditure, which is marginally negatively correlated with output. This makes good sense, considering that governments often try to either fasten or slow down up the economy, so they act against the trend.
+
+# (f) Alternative decomposition
+
+```{r}
+#| label: nx
+#| fig.height: 5
+#| fig.width: 8
+
+# Create a time trend variable
+
+df_output <-
+  output %>% 
+  filter(type == 'log') %>% 
+  rownames_to_column(var = 't') %>% 
+  select(t, value, month_year)
+
+# Regression to get the geometric time trend
+
+output_reg_geom <- lm(
+  value ~ as.numeric(t),
+  data = df_output
+)
+
+# Add these fitted values to a wide format dataframe of each of the time series
+
+output_level <-
+  df %>% 
+  filter(account == 'Gross domestic product at market prices') %>% 
+  select(month_year, value) %>% 
+  rename(output = 'value') 
+
+consumption_level <-
+  df %>% 
+  filter(account %in% c('Household final consumption expenditure', 'Durable goods')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value = value[account == 'Household final consumption expenditure'] -
+              value[account == 'Durable goods']) %>% 
+  rename(consumption = 'value') %>% 
+  select(-month_year)
+
+investment_level <-
+  df %>% 
+  filter(account %in% c('Gross fixed capital formation', 
+                        'Durable goods', 
+                        'General governments gross fixed capital formation')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value = 
+              value[account == 'Gross fixed capital formation'] +
+              value[account == 'Durable goods'] -
+              value[account == 'General governments gross fixed capital formation'] ) %>% 
+  rename(investment = 'value') %>% 
+  select(-month_year)
+
+government_level <-
+  df %>% 
+  filter(account %in% c ('General governments final consumption expenditure', 
+                        'General governments gross fixed capital formation')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value =
+              value[account == 'General governments final consumption expenditure'] +
+              value[account == 'General governments gross fixed capital formation'] )%>% 
+  rename(government = 'value') %>% 
+  select(-month_year)
+
+nx_level <-
+  df %>% 
+  filter(account %in% c ('Exports of goods and services', 
+                         'Less: imports of goods and services')) %>% 
+  select(month_year, account, value) %>% 
+  group_by(month_year) %>% 
+  summarise(value =
+              value[account == 'Exports of goods and services'] -
+              value[account == 'Less: imports of goods and services'] )%>% 
+  rename(nx = 'value') %>% 
+  select(-month_year)
+
+# Construct the dataset for graphing
+
+df_levels <-
+  output_level %>% 
+  cbind(consumption_level) %>% 
+  cbind(investment_level) %>% 
+  cbind(government_level) %>%
+  cbind(nx_level) %>% 
+  mutate(trend = exp(output_reg_geom$residuals),
+         output_detrend = output/trend,
+         consumption_detrend = consumption/trend,
+         investment_detrend = investment/trend,
+         government_detrend = government/trend,
+         nx_detrend = nx_level/trend)
+
+# Apply BK filters
+
+output_bk_geom <-
+  bkfilter(df_levels$output_detrend, pl = 6, pu = 32, nfix = 12)
+
+consumption_bk_geom <-
+  bkfilter(df_levels$consumption_detrend, pl = 6, pu = 32, nfix = 12)
+
+investment_bk_geom <-
+  bkfilter(df_levels$investment_detrend, pl = 6, pu = 32, nfix = 12)
+
+government_bk_geom <-
+  bkfilter(df_levels$government_detrend, pl = 6, pu = 32, nfix = 12)
+
+nx_bk_geom <-
+  bkfilter(df_levels$nx_detrend$nx, pl = 6, pu = 32, nfix = 12)
+
+# Add them to the master dataframe and switch to long format for graphing
+
+df_levels <-
+  df_levels %>% 
+  mutate(
+    bk_output = output_bk_geom$cycle,
+    bk_consumption = consumption_bk_geom$cycle,
+    bk_investment = investment_bk_geom$cycle,
+    bk_government = government_bk_geom$cycle,
+    bk_nx = nx_bk_geom$cycle  
+  ) %>%
+  select(month_year,
+         bk_output,
+         bk_consumption,
+         bk_investment,
+         bk_government,
+         bk_nx) %>% 
+  gather(
+    type,
+    value,
+    bk_output,
+    bk_consumption,
+    bk_investment,
+    bk_government,
+    bk_nx
+  )
+
+# Now, do the graph
+
+df_levels %>% 
+  ggplot(aes(month_year, value, colour = type)) + 
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c('bk_output' = '#FFA07A', 
+                                 'bk_consumption' = '#6495ED', 
+                                 'bk_investment' = '#8FBC8F',
+                                 'bk_government' =  '#BEBADA',
+                                 'bk_nx' = '#bc80bd'),
+                     name = 'Series',
+                     labels = c('bk_output' = 'Output', 
+                                'bk_consumption' = 'Consumption', 
+                                'bk_investment' = 'Investment',
+                                'bk_government' = 'Gov. Expenditure',
+                                'bk_nx' = 'Net Imports (NX)')) +
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = c('0.45', '0.95'),
+        legend.direction = 'horizontal')+
+  labs(x = 'Time (t)',
+       y = 'Value in billions of chained (2012) dollars',
+       colour = 'National Account',
+       title = 'Cycle Graph of Select Canadian National Accounts',
+       subtitle = 'Quarterly 1961-2022')
+
+```
+Results are quite different now in that first, we cannot accurately observe the cycle of output as it is modeled to be linear in time. Further, the other results seem about the same, although we do observe much smaller volatility in earlier periods of time, unlike all other graphs in (b) (ii). NX seem to be procyclical if compared to consumption, which has proven to be procyclical as well.
 
